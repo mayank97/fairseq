@@ -14,7 +14,6 @@ from fairseq.modules import (
     PositionalEmbedding,
     TransformerSentenceEncoderLayer,
 )
-import random
 
 
 def init_bert_params(module):
@@ -40,9 +39,7 @@ def init_bert_params(module):
         if module.padding_idx is not None:
             module.weight.data[module.padding_idx].zero_()
     if isinstance(module, MultiheadAttention):
-        module.q_proj.weight.data.normal_(mean=0.0, std=0.02)
-        module.k_proj.weight.data.normal_(mean=0.0, std=0.02)
-        module.v_proj.weight.data.normal_(mean=0.0, std=0.02)
+        module.in_proj_weight.data.normal_(mean=0.0, std=0.02)
 
 
 class TransformerSentenceEncoder(nn.Module):
@@ -80,7 +77,6 @@ class TransformerSentenceEncoder(nn.Module):
         dropout: float = 0.1,
         attention_dropout: float = 0.1,
         activation_dropout: float = 0.1,
-        layerdrop : float = 0.0,
         max_seq_len: int = 256,
         num_segments: int = 2,
         use_position_embeddings: bool = True,
@@ -95,21 +91,18 @@ class TransformerSentenceEncoder(nn.Module):
         freeze_embeddings: bool = False,
         n_trans_layers_to_freeze: int = 0,
         export: bool = False,
-        traceable: bool = False,
     ) -> None:
 
         super().__init__()
         self.padding_idx = padding_idx
         self.vocab_size = vocab_size
         self.dropout = dropout
-        self.layerdrop = layerdrop
         self.max_seq_len = max_seq_len
         self.embedding_dim = embedding_dim
         self.num_segments = num_segments
         self.use_position_embeddings = use_position_embeddings
         self.apply_bert_init = apply_bert_init
         self.learned_pos_embedding = learned_pos_embedding
-        self.traceable = traceable
 
         self.embed_tokens = nn.Embedding(
             self.vocab_size, self.embedding_dim, self.padding_idx
@@ -184,7 +177,7 @@ class TransformerSentenceEncoder(nn.Module):
 
         # compute padding mask. This is needed for multi-head attention
         padding_mask = tokens.eq(self.padding_idx)
-        if not self.traceable and not padding_mask.any():
+        if not padding_mask.any():
             padding_mask = None
 
         x = self.embed_tokens(tokens)
@@ -215,13 +208,9 @@ class TransformerSentenceEncoder(nn.Module):
             inner_states.append(x)
 
         for layer in self.layers:
-            # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-            dropout_probability = random.uniform(0, 1)
-            if not self.training or (dropout_probability > self.layerdrop):
-                x, _ = layer(x, self_attn_padding_mask=padding_mask)
-                if not last_state_only:
-                    inner_states.append(x)
-
+            x, _ = layer(x, self_attn_padding_mask=padding_mask)
+            if not last_state_only:
+                inner_states.append(x)
 
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
@@ -231,7 +220,4 @@ class TransformerSentenceEncoder(nn.Module):
         if last_state_only:
             inner_states = [x]
 
-        if self.traceable:
-            return torch.stack(inner_states), sentence_rep
-        else:
-            return inner_states, sentence_rep
+        return inner_states, sentence_rep

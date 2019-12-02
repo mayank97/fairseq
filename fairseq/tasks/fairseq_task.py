@@ -7,12 +7,7 @@ import numpy as np
 import torch
 
 from fairseq import tokenizer
-from fairseq.data import (
-    data_utils,
-    FairseqDataset,
-    iterators,
-    Dictionary,
-)
+from fairseq.data import data_utils, FairseqDataset, iterators, Dictionary
 
 
 class FairseqTask(object):
@@ -248,6 +243,11 @@ class FairseqTask(object):
                 - logging outputs to display while training
         """
         model.train()
+
+        for index in range(0, len(sample['target'])):
+            if(sample['target'][index] < 0):
+                sample['target'][index] += 16
+        
         loss, sample_size, logging_output = criterion(model, sample)
         if ignore_grad:
             loss *= 0
@@ -257,6 +257,11 @@ class FairseqTask(object):
     def valid_step(self, sample, model, criterion):
         model.eval()
         with torch.no_grad():
+
+            for index in range(0, len(sample['target'])):
+                if(sample['target'][index] < 0):
+                    sample['target'][index] += 16
+
             loss, sample_size, logging_output = criterion(model, sample)
         return loss, sample_size, logging_output
 
